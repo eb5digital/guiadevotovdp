@@ -1,0 +1,93 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the application, potentially an admin.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "User's email address"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "user"],
+          "description": "Role of the user"
+        }
+      },
+      "required": ["email", "role"]
+    },
+    "FeaturedBusiness": {
+      "title": "FeaturedBusiness",
+      "description": "A business featured on the home page.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the business"
+        },
+        "category": {
+          "type": "string",
+          "description": "Category of the business"
+        },
+        "rating": {
+          "type": "number",
+          "description": "Average rating"
+        },
+        "reviews": {
+          "type": "number",
+          "description": "Number of reviews"
+        },
+        "image": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL of the business image"
+        },
+        "description": {
+          "type": "string",
+          "description": "Short description of the business"
+        },
+        "address": {
+          "type": "string",
+          "description": "Physical address"
+        },
+        "isPremium": {
+          "type": "boolean",
+          "description": "Whether the business is a premium sponsor"
+        },
+        "promo": {
+          "type": "string",
+          "description": "Promotional text (optional)"
+        },
+        "whatsapp": {
+          "type": "string",
+          "description": "WhatsApp contact number (optional)"
+        },
+        "instagram": {
+          "type": "string",
+          "description": "Instagram handle (optional)"
+        },
+        "order": {
+          "type": "number",
+          "description": "Order in which to display"
+        }
+      },
+      "required": ["name", "category", "rating", "reviews", "image", "description", "address", "isPremium", "order"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/User"
+      },
+      "description": "Stores user profiles and roles."
+    },
+    "/featured_businesses/{businessId}": {
+      "schema": {
+        "$ref": "#/entities/FeaturedBusiness"
+      },
+      "description": "Stores the featured businesses shown on the home page."
+    }
+  }
+}

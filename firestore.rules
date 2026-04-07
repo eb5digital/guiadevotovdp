@@ -1,0 +1,119 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: user uid
+    // Fields:
+    //   - email: string (required)
+    //   - role: string (required, 'admin' or 'user')
+    //
+    // Collection: featured_businesses
+    // Document ID: auto-generated
+    // Fields:
+    //   - name: string (required, max 100)
+    //   - category: string (required, max 50)
+    //   - rating: number (required, >= 0, <= 5)
+    //   - reviews: number (required, >= 0)
+    //   - image: string (required, valid URL)
+    //   - description: string (required, max 500)
+    //   - address: string (required, max 200)
+    //   - isPremium: boolean (required)
+    //   - promo: string (optional, max 100)
+    //   - whatsapp: string (optional, max 50)
+    //   - instagram: string (optional, max 50)
+    //   - order: number (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        (
+          (request.auth.token.email == "eb5marketingdigital@gmail.com" && request.auth.token.email_verified == true) ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        );
+    }
+    
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+    
+    function hasOnlyAllowedFields(allowedFields) {
+      return request.resource.data.keys().hasOnly(allowedFields);
+    }
+    
+    function hasRequiredFields(requiredFields) {
+      return request.resource.data.keys().hasAll(requiredFields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser() {
+      let allowedFields = ['email', 'role'];
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(allowedFields) &&
+             hasRequiredFields(allowedFields) &&
+             data.email is string && data.email.size() > 0 && data.email.size() < 100 &&
+             data.role in ['admin', 'user'];
+    }
+
+    function isValidFeaturedBusiness() {
+      let allowedFields = ['name', 'category', 'rating', 'reviews', 'image', 'description', 'address', 'isPremium', 'promo', 'whatsapp', 'instagram', 'order'];
+      let requiredFields = ['name', 'category', 'rating', 'reviews', 'image', 'description', 'address', 'isPremium', 'order'];
+      let data = request.resource.data;
+      
+      return hasOnlyAllowedFields(allowedFields) &&
+             hasRequiredFields(requiredFields) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.category is string && data.category.size() > 0 && data.category.size() <= 50 &&
+             data.rating is number && data.rating >= 0 && data.rating <= 5 &&
+             data.reviews is number && data.reviews >= 0 &&
+             isValidUrl(data.image) && data.image.size() <= 500 &&
+             data.description is string && data.description.size() > 0 && data.description.size() <= 500 &&
+             data.address is string && data.address.size() > 0 && data.address.size() <= 200 &&
+             data.isPremium is bool &&
+             data.order is number &&
+             (!('promo' in data) || (data.promo is string && data.promo.size() <= 100)) &&
+             (!('whatsapp' in data) || (data.whatsapp is string && data.whatsapp.size() <= 50)) &&
+             (!('instagram' in data) || (data.instagram is string && data.instagram.size() <= 50));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      // Only admins can create/update roles
+      allow create, update: if isAdmin() && isValidUser();
+      allow delete: if isAdmin();
+    }
+
+    match /featured_businesses/{businessId} {
+      // Anyone can read the featured businesses
+      allow read: if true;
+      // Only admins can modify the featured businesses
+      allow create, update: if isAdmin() && isValidFeaturedBusiness();
+      allow delete: if isAdmin();
+    }
+  }
+}
