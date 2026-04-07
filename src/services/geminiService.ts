@@ -1,7 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 export interface MapsLink {
   uri: string;
   title: string;
@@ -13,6 +11,15 @@ export interface GeminiResponse {
 }
 
 export async function searchBusinesses(category: string, location: string): Promise<GeminiResponse> {
+  // @ts-ignore - Bypass TS error for import.meta.env
+  const apiKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
+  
+  if (!apiKey || apiKey === 'undefined') {
+    throw new Error("Falta la clave de API de Gemini. Por favor, configura la variable GEMINI_API_KEY en Vercel y vuelve a hacer el deploy (Redeploy).");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
   const prompt = `Actúa como un experto guía local de Buenos Aires. Recomienda 5 excelentes opciones de "${category}" en el barrio de "${location}", CABA. 
 Para cada opción, incluye:
 - Nombre del lugar (como título)
