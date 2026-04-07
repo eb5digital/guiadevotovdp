@@ -23,33 +23,25 @@ Usa un formato Markdown limpio y atractivo.`;
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.0-flash",
       contents: prompt,
       config: {
-        tools: [{ googleMaps: {} }],
-        toolConfig: {
-          retrievalConfig: {
-            latLng: {
-              latitude: -34.5985, // Villa Devoto approx
-              longitude: -58.5105
-            }
-          }
-        }
+        tools: [{ googleSearch: {} }],
       },
     });
 
     const markdown = response.text || "No se encontraron resultados.";
-    
-    // Extract Maps links
+
+    // Extract web links from grounding metadata
     const mapsLinks: MapsLink[] = [];
     const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-    
+
     if (chunks && Array.isArray(chunks)) {
       for (const chunk of chunks) {
-        if (chunk.maps && chunk.maps.uri) {
+        if (chunk.web && chunk.web.uri) {
           mapsLinks.push({
-            uri: chunk.maps.uri,
-            title: chunk.maps.title || "Ver en Google Maps"
+            uri: chunk.web.uri,
+            title: chunk.web.title || "Ver más"
           });
         }
       }
