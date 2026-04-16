@@ -10,22 +10,27 @@ export interface GeminiResponse {
   mapsLinks: MapsLink[];
 }
 
-export async function searchBusinesses(category: string, location: string): Promise<GeminiResponse> {
+export async function searchBusinesses(category: string, location: string, userLocation?: {lat: number, lng: number}): Promise<GeminiResponse> {
   // @ts-ignore - Bypass TS error for import.meta.env
   const apiKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
   
-  if (!apiKey || apiKey === 'undefined') {
-    throw new Error("Falta la clave de API de Gemini. Por favor, configura la variable GEMINI_API_KEY en Vercel y vuelve a hacer el deploy (Redeploy).");
+  if (!apiKey || apiKey === 'undefined' || apiKey === 'null') {
+    throw new Error("Falta la clave de API de Gemini. En Vercel, ve a Settings > Environment Variables y agrega VITE_GEMINI_API_KEY con tu clave. Luego haz un Redeploy.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
 
-  const prompt = `Actúa como un experto guía local de Buenos Aires. Recomienda 5 excelentes opciones de "${category}" en el barrio de "${location}", CABA. 
+  const locationHint = userLocation 
+    ? `\n¡MUY IMPORTANTE!: El usuario ha compartido su ubicación exacta (Latitud: ${userLocation.lat}, Longitud: ${userLocation.lng}). Debes PRIORIZAR ABSOLUTAMENTE las opciones que estén geográficamente más cerca de estas coordenadas dentro del barrio.`
+    : '';
+
+  const prompt = `Actúa como un experto guía local de Buenos Aires. Recomienda 5 excelentes opciones de "${category}" en el barrio de "${location}", CABA. ${locationHint}
 Para cada opción, incluye:
 - Nombre del lugar (como título)
 - Una imagen del lugar (intenta extraer y mostrar una imagen real de las reseñas de Google Maps usando formato Markdown ![alt](url). Si no es posible, usa una imagen representativa).
 - Una breve descripción de por qué es bueno y qué ofrecen.
 - Un resumen de sus mejores reviews o calificación general (menciona textualmente alguna review muy positiva si está disponible).
+${userLocation ? '- Una mención breve de que está cerca de su ubicación actual.' : ''}
 Usa un formato Markdown limpio y atractivo.`;
 
   try {
@@ -37,8 +42,8 @@ Usa un formato Markdown limpio y atractivo.`;
         toolConfig: {
           retrievalConfig: {
             latLng: {
-              latitude: -34.5985, // Villa Devoto approx
-              longitude: -58.5105
+              latitude: userLocation ? userLocation.lat : -34.5985, // Villa Devoto approx
+              longitude: userLocation ? userLocation.lng : -58.5105
             }
           }
         }
@@ -63,8 +68,9 @@ Usa un formato Markdown limpio y atractivo.`;
     }
 
     return { markdown, mapsLinks };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error calling Gemini API:", error);
-    throw new Error("Hubo un error al buscar los comercios. Por favor, intenta de nuevo.");
+    const errorMessage = error?.message || "Error desconocido";
+    throw new Error(`Error de IA: ${errorMessage}. Por favor, revisa la consola para más detalles.`);
   }
 }

@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Search, MapPin, Star, Coffee, ShoppingBag, Scissors, Dumbbell, Utensils, ArrowRight, ExternalLink, Loader2, Tag, MessageCircle, Instagram, X } from 'lucide-react';
+import { Search, MapPin, Star, Coffee, ShoppingBag, Scissors, Dumbbell, Utensils, ArrowRight, ExternalLink, Loader2, Tag, MessageCircle, Instagram, X, Navigation } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { searchBusinesses, GeminiResponse } from '../services/geminiService';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 
 // Fix for default marker icons in React Leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -42,6 +42,14 @@ export interface FeaturedBusiness {
   order: number;
 }
 
+const RecenterMap = ({ lat, lng }: { lat: number; lng: number }) => {
+  const map = useMap();
+  useEffect(() => {
+    map.setView([lat, lng], map.getZoom(), { animate: true });
+  }, [lat, lng, map]);
+  return null;
+};
+
 export default function Directory() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -51,6 +59,10 @@ export default function Directory() {
   const [featuredBusinesses, setFeaturedBusinesses] = useState<FeaturedBusiness[]>([]);
   const [loadingFeatured, setLoadingFeatured] = useState(true);
   const [selectedBusiness, setSelectedBusiness] = useState<FeaturedBusiness | null>(null);
+  
+  const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationErrorMsg, setLocationErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const q = query(collection(db, 'featured_businesses'), orderBy('order', 'asc'));
@@ -79,13 +91,43 @@ export default function Directory() {
     const searchTerm = categoryName || query;
     
     try {
-      const response = await searchBusinesses(searchTerm, 'Villa Devoto y Villa del Parque');
+      const response = await searchBusinesses(searchTerm, 'Villa Devoto y Villa del Parque', userLocation || undefined);
       setResults(response);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ocurrió un error inesperado.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const requestLocation = () => {
+    setIsLocating(true);
+    setLocationErrorMsg(null);
+    if (!navigator.geolocation) {
+      setLocationErrorMsg("Tu navegador no soporta geolocalización.");
+      setIsLocating(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        });
+        setIsLocating(false);
+        // Automatically trigger search with new location if there's an active query
+        if (searchQuery || activeCategory) {
+          handleSearch(searchQuery, activeCategory || undefined);
+        }
+      },
+      (error) => {
+        console.error("Error obtaining location", error);
+        setLocationErrorMsg("No pudimos obtener tu ubicación. Verifica los permisos.");
+        setIsLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
   };
 
   const onSearchSubmit = (e: React.FormEvent) => {
@@ -105,8 +147,21 @@ export default function Directory() {
     handleSearch('', categoryName);
   };
 
+  // Haversine distance calculation
+  const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2); 
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+    return R * c;
+  };
+
   // Filter featured businesses based on active category or search query
-  const filteredBusinesses = featuredBusinesses.filter(business => {
+  let filteredBusinesses = featuredBusinesses.filter(business => {
     if (activeCategory) {
       return business.category.toLowerCase().includes(activeCategory.toLowerCase()) || 
              activeCategory.toLowerCase().includes(business.category.toLowerCase());
@@ -117,6 +172,18 @@ export default function Directory() {
     }
     return true;
   });
+
+  if (userLocation) {
+    filteredBusinesses = [...filteredBusinesses].sort((a, b) => {
+      // If a business is missing coordinates, put it at the end
+      if (!a.lat || !a.lng) return 1;
+      if (!b.lat || !b.lng) return -1;
+      
+      const distA = getDistance(userLocation.lat, userLocation.lng, a.lat, a.lng);
+      const distB = getDistance(userLocation.lat, userLocation.lng, b.lat, b.lng);
+      return distA - distB;
+    });
+  }
 
   // Calculate how many placeholders we need to show (min 3 total spots, or up to 6)
   const displaySlots = Math.max(3, Math.ceil(filteredBusinesses.length / 3) * 3);
@@ -167,10 +234,18 @@ export default function Directory() {
               <input 
                 type="text" 
                 placeholder="¿Qué estás buscando? (ej. sushi, peluquería)" 
-                className="w-full bg-white text-ink rounded-full py-4 pl-6 pr-16 text-lg focus:outline-none focus:ring-2 focus:ring-brand shadow-lg"
+                className="w-full bg-white text-ink rounded-full py-4 pl-6 pr-28 text-lg focus:outline-none focus:ring-2 focus:ring-brand shadow-lg"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
+              <button
+                type="button"
+                onClick={requestLocation}
+                className={`absolute right-16 top-2 bottom-2 p-3 rounded-full hover:bg-gray-100 transition-colors flex items-center justify-center ${userLocation ? 'text-brand' : 'text-gray-400 hover:text-gray-600'}`}
+                title={userLocation ? "Ubicación activada" : "Buscar cerca de mí"}
+              >
+                {isLocating ? <Loader2 size={24} className="animate-spin" /> : <MapPin size={24} />}
+              </button>
               <button 
                 type="submit"
                 className="absolute right-2 top-2 bottom-2 bg-brand text-white rounded-full p-3 hover:bg-brand-dark transition-colors flex items-center justify-center"
@@ -198,6 +273,14 @@ export default function Directory() {
               ))}
             </select>
           </form>
+          {locationErrorMsg && (
+            <p className="mt-3 text-red-300 text-sm">{locationErrorMsg}</p>
+          )}
+          {userLocation && !locationErrorMsg && (
+            <p className="mt-3 text-green-300 text-sm flex items-center gap-1">
+              <Star size={14} className="fill-green-300" /> Mostrando resultados cerca tuyo
+            </p>
+          )}
         </div>
       </header>
 
@@ -302,15 +385,23 @@ export default function Directory() {
             {!loadingFeatured && filteredBusinesses.some(b => b.lat && b.lng) && (
               <div className="mb-12 rounded-3xl overflow-hidden shadow-sm border border-gray-100 h-[400px] relative z-0">
                 <MapContainer 
-                  center={[-34.6015, -58.5000]} 
+                  center={userLocation ? [userLocation.lat, userLocation.lng] : [-34.6015, -58.5000]} 
                   zoom={14} 
                   style={{ height: '100%', width: '100%' }}
                   scrollWheelZoom={false}
                 >
+                  {userLocation && <RecenterMap lat={userLocation.lat} lng={userLocation.lng} />}
                   <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   />
+                  {userLocation && (
+                    <Marker position={[userLocation.lat, userLocation.lng]}>
+                      <Popup>
+                        <div className="text-center font-medium">Estás aquí</div>
+                      </Popup>
+                    </Marker>
+                  )}
                   {filteredBusinesses.map(business => {
                     if (business.lat && business.lng) {
                       return (
